@@ -4,7 +4,7 @@
     "format:tests": "npx prettier --write 'test/*.{js,ts,sol}'",
     "format:scripts": "npx prettier --write 'scripts/*.{js,ts,sol}'",
     "format:check": "npx prettier --check '**/*.{js,ts,sol}'",
-    "format-sol": "npx prettier --write --plugin=prettier-plugin-solidity 'contracts/**/*.sol'"
+    "format:sol": "npx prettier --write --plugin=prettier-plugin-solidity 'contracts/**/*.sol'"
   },
   "devDependencies": {
     "@eslint/js": "^9.27.0",

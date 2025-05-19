@@ -49,7 +49,8 @@ contract SettelmentsControl is Multicall, Initializable {
     error InitializeOnlyByInitializer();
 
     // TODO При деплое необходимо изменить адрес
-    address public constant INITIALIZER_ADDRESS = 0x5c8630069c6663e7Fa3eAAAB562e2fF4419e12f7;
+    address public constant INITIALIZER_ADDRESS =
+        0x5c8630069c6663e7Fa3eAAAB562e2fF4419e12f7;
 
     // keccak256(abi.encode(uint256(keccak256("SettelmentControle.storage")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant STORAGE_LOCATION =
@@ -79,14 +80,17 @@ contract SettelmentsControl is Multicall, Initializable {
         _;
     }
 
-        modifier onlyInitializer {
+    modifier onlyInitializer() {
         if (msg.sender != INITIALIZER_ADDRESS) {
             revert InitializeOnlyByInitializer();
         }
         _;
     }
 
-    function initialize(address _token, address admin) external initializer onlyInitializer {
+    function initialize(
+        address _token,
+        address admin
+    ) external initializer onlyInitializer {
         ContractStorage storage $ = _getContractStorage();
         $.token = IERC20(_token);
         $.admin = admin;
@@ -97,13 +101,22 @@ contract SettelmentsControl is Multicall, Initializable {
         uint256 amount,
         string calldata userId
     ) external {
-        address sender = msg.sender;
         ContractStorage storage $ = _getContractStorage();
-        $.token.safeTransferFrom(sender, address(this), amount);
-        bytes32 userIdHash = keccak256(abi.encodePacked(userId));
-        $.balances[userIdHash].clientBalance += amount;
-        uint256 currentClientBalance = $.balances[userIdHash].clientBalance;
-        emit TopUpClientBalance(userId, amount, currentClientBalance, sender);
+
+        Balance storage clientBalance = $.balances[
+            keccak256(abi.encodePacked(userId))
+        ];
+
+        $.token.safeTransferFrom(msg.sender, address(this), amount);
+
+        clientBalance.clientBalance += amount;
+
+        emit TopUpClientBalance(
+            userId,
+            amount,
+            clientBalance.clientBalance,
+            msg.sender
+        );
     }
 
     function paymentClientToNative(
@@ -111,59 +124,75 @@ contract SettelmentsControl is Multicall, Initializable {
         string calldata nativeId,
         uint256 amount
     ) external onlyAdmin {
-        bytes32 clientHash = keccak256(abi.encodePacked(clientId));
-        bytes32 nativeHash = keccak256(abi.encodePacked(nativeId));
         ContractStorage storage $ = _getContractStorage();
-        uint256 clientBalance = $.balances[clientHash].clientBalance;
-        if (clientBalance < amount) {
-            revert InsufficientClientBalance(amount, clientBalance);
+
+        Balance storage clientBalanceRef = $.balances[
+            keccak256(abi.encodePacked(clientId))
+        ];
+        Balance storage nativeBalanceRef = $.balances[
+            keccak256(abi.encodePacked(nativeId))
+        ];
+
+        if (clientBalanceRef.clientBalance < amount) {
+            revert InsufficientClientBalance(
+                amount,
+                clientBalanceRef.clientBalance
+            );
         }
-        clientBalance -= amount;
-        $.balances[clientHash].clientBalance = clientBalance;
-        uint256 nativeBalance = $.balances[nativeHash].nativeBalance;
-        nativeBalance += amount;
-        $.balances[nativeHash].nativeBalance = nativeBalance;
+
+        clientBalanceRef.clientBalance -= amount;
+        nativeBalanceRef.nativeBalance += amount;
+
         emit PaymentClientToNative(
             clientId,
-            clientBalance,
+            clientBalanceRef.clientBalance,
             nativeId,
-            nativeBalance,
+            nativeBalanceRef.nativeBalance,
             amount
         );
     }
 
     function withdrawFundsToNative(
         string calldata userId,
-        address reciever,
+        address receiver,
         uint256 amount
     ) external onlyAdmin {
-        bytes32 nativeHash = keccak256(abi.encodePacked(userId));
         ContractStorage storage $ = _getContractStorage();
-        uint256 nativeBalance = $.balances[nativeHash].nativeBalance;
-        if (nativeBalance < amount) {
-            revert InsufficientNativeBalance(amount, nativeBalance);
+        Balance storage balanceRef = $.balances[
+            keccak256(abi.encodePacked(userId))
+        ];
+
+        uint256 currentBalance = balanceRef.nativeBalance;
+        if (currentBalance < amount) {
+            revert InsufficientNativeBalance(amount, currentBalance);
         }
-        $.token.safeTransfer(reciever, amount);
-        nativeBalance -= amount;
-        $.balances[nativeHash].nativeBalance = nativeBalance;
-        emit WithdrawFundsToNative(userId, reciever, amount);
+
+        balanceRef.nativeBalance = currentBalance - amount;
+        $.token.safeTransfer(receiver, amount);
+
+        emit WithdrawFundsToNative(userId, receiver, amount);
     }
 
     function backFundsToClient(
         string calldata userId,
-        address reciever,
+        address receiver,
         uint256 amount
     ) external onlyAdmin {
-        bytes32 clientHash = keccak256(abi.encodePacked(userId));
         ContractStorage storage $ = _getContractStorage();
-        uint256 clientBalance = $.balances[clientHash].clientBalance;
-        if (clientBalance < amount) {
-            revert InsufficientNativeBalance(amount, clientBalance);
+        Balance storage balanceRef = $.balances[
+            keccak256(abi.encodePacked(userId))
+        ];
+
+        uint256 currentBalance = balanceRef.clientBalance;
+        if (currentBalance < amount) {
+            revert InsufficientNativeBalance(amount, currentBalance);
         }
-        $.token.safeTransfer(reciever, amount);
-        clientBalance -= amount;
-        $.balances[clientHash].clientBalance = clientBalance;
-        emit BackFundsToClient(userId, reciever, amount);
+
+        balanceRef.clientBalance = currentBalance - amount;
+
+        $.token.safeTransfer(receiver, amount);
+
+        emit BackFundsToClient(userId, receiver, amount);
     }
 
     function getBalance(
