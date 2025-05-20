@@ -110,10 +110,10 @@ describe("SettelmentsControl", function () {
       await expect(
         settlementsControl
           .connect(admin)
-          .paymentClientToNative(clientId, nativeId, amount),
+          .paymentClientToNative(clientId, nativeId, amount, "123456", 156156156n, 10n),
       )
         .to.emit(settlementsControl, "PaymentClientToNative")
-        .withArgs(clientId, 0, nativeId, amount, amount);
+        .withArgs(clientId, 0, nativeId, amount, amount, "123456", 156156156n, 10n);
 
       const clientBalance = await settlementsControl.getBalance(clientId);
       const nativeBalance = await settlementsControl.getBalance(nativeId);
@@ -136,7 +136,7 @@ describe("SettelmentsControl", function () {
       await expect(
         settlementsControl
           .connect(admin)
-          .paymentClientToNative(clientId, nativeId, amount),
+          .paymentClientToNative(clientId, nativeId, amount, "123456", 156156156n, 10n),
       ).to.be.revertedWithCustomError(
         settlementsControl,
         "InsufficientClientBalance",
@@ -151,7 +151,7 @@ describe("SettelmentsControl", function () {
       await expect(
         settlementsControl
           .connect(user1)
-          .paymentClientToNative("client123", "native456", 100),
+          .paymentClientToNative("client123", "native456", 100, "123456", 156156156n, 10n),
       ).to.be.revertedWithCustomError(settlementsControl, "OnlyAdmin");
     });
   });
@@ -176,7 +176,7 @@ describe("SettelmentsControl", function () {
         .topUpClientBalance(amount, clientId);
       await settlementsControl
         .connect(admin)
-        .paymentClientToNative(clientId, nativeId, amount);
+        .paymentClientToNative(clientId, nativeId, amount, "123456", 156156156n, 10n);
 
       const initialReceiverBalance = await token.balanceOf(receiver);
       await expect(

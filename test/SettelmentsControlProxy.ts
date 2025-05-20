@@ -184,10 +184,10 @@ describe("SettelmentsControlProxy", function () {
         await expect(
           proxyUsed
             .connect(admin)
-            .paymentClientToNative(clientId, nativeId, amount),
+            .paymentClientToNative(clientId, nativeId, amount, "123456", 156156156n, 10n),
         )
           .to.emit(proxyUsed, "PaymentClientToNative")
-          .withArgs(clientId, 0, nativeId, amount, amount);
+          .withArgs(clientId, 0, nativeId, amount, amount, "123456", 156156156n, 10n);
 
         const clientBalance = await proxyUsed.getBalance(clientId);
         const nativeBalance = await proxyUsed.getBalance(nativeId);
@@ -210,7 +210,7 @@ describe("SettelmentsControlProxy", function () {
         await expect(
           proxyUsed
             .connect(admin)
-            .paymentClientToNative(clientId, nativeId, amount),
+            .paymentClientToNative(clientId, nativeId, amount, "123456", 156156156n, 10n),
         ).to.be.revertedWithCustomError(proxyUsed, "InsufficientClientBalance");
       });
 
@@ -221,7 +221,7 @@ describe("SettelmentsControlProxy", function () {
         await expect(
           proxyUsed
             .connect(user1)
-            .paymentClientToNative("client123", "native456", 100),
+            .paymentClientToNative("client123", "native456", 100, "123456", 156156156n, 10n),
         ).to.be.revertedWithCustomError(proxyUsed, "OnlyAdmin");
       });
     });
@@ -243,7 +243,7 @@ describe("SettelmentsControlProxy", function () {
         await proxyUsed.connect(user1).topUpClientBalance(amount, clientId);
         await proxyUsed
           .connect(admin)
-          .paymentClientToNative(clientId, nativeId, amount);
+          .paymentClientToNative(clientId, nativeId, amount, "123456", 156156156n, 10n);
 
         const initialReceiverBalance = await token.balanceOf(receiver);
         await expect(
