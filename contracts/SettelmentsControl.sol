@@ -31,7 +31,10 @@ contract SettelmentsControl is Multicall, Initializable {
         uint256 clientBalance,
         string nativeId,
         uint256 nativeBalance,
-        uint256 amount
+        uint256 amount,
+        string sessionId,
+        uint256 timestamp,
+        uint256 minutesQty
     );
     event BalanceUpdated(address indexed user, uint256 newBalance);
     event WithdrawFundsToNative(
@@ -67,6 +70,7 @@ contract SettelmentsControl is Multicall, Initializable {
         pure
         returns (ContractStorage storage $)
     {
+        // solhint-disable-next-line no-inline-assembly
         assembly {
             $.slot := STORAGE_LOCATION
         }
@@ -122,7 +126,10 @@ contract SettelmentsControl is Multicall, Initializable {
     function paymentClientToNative(
         string calldata clientId,
         string calldata nativeId,
-        uint256 amount
+        uint256 amount,
+        string calldata sessionId,
+        uint256 timestamp,
+        uint256 minutesQty
     ) external onlyAdmin {
         ContractStorage storage $ = _getContractStorage();
 
@@ -148,7 +155,10 @@ contract SettelmentsControl is Multicall, Initializable {
             clientBalanceRef.clientBalance,
             nativeId,
             nativeBalanceRef.nativeBalance,
-            amount
+            amount,
+            sessionId,
+            timestamp,
+            minutesQty
         );
     }
 
