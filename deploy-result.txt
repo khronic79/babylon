@@ -1,0 +1,36 @@
+Starting deployment...
+Deploying ERC20Mock...
+ERC20Mock deployed at: 0x4cbab4a37aa1d9f7a8c23f636625843cdaff3375
+Verifying ERC20Mock (30 sec awaiting)...
+The contract 0x4cbab4a37aa1d9f7a8c23f636625843cdaff3375 has already been verified on the block explorer. If you're trying to verify a partially verified contract, please use the --force flag.
+https://amoy.polygonscan.com/address/0x4cbab4a37aa1d9f7a8c23f636625843cdaff3375#code
+
+Deploying SettelmentsControl implementation...
+SettelmentsControl implementation deployed at: 0x5af91d78ce975037ab16d1402e3064848b411019
+Verifying SettelmentsControl implementation (30 sec awaiting)...
+Successfully submitted source code for contract
+contracts/SettelmentsControl.sol:SettelmentsControl at 0x5af91d78ce975037ab16d1402e3064848b411019
+for verification on the block explorer. Waiting for verification result...
+
+Successfully verified contract SettelmentsControl on the block explorer.
+https://amoy.polygonscan.com/address/0x5af91d78ce975037ab16d1402e3064848b411019#code
+
+Deploying SettelmentsControlProxy...
+Proxy deployed at: 0x51de3ac5b5cdf4496c5b793a98b1a103e6675386
+Verifying Proxy (30 sec awaiting)...
+Successfully submitted source code for contract
+contracts/SettelmentsControlProxy.sol:SettelmentsControlProxy at 0x51de3ac5b5cdf4496c5b793a98b1a103e6675386
+for verification on the block explorer. Waiting for verification result...
+
+Successfully verified contract SettelmentsControlProxy on the block explorer.
+https://amoy.polygonscan.com/address/0x51de3ac5b5cdf4496c5b793a98b1a103e6675386#code
+
+Initializing SettelmentsControl...
+SettelmentsControl initialized successfully
+Admin set to: 0x5c8630069c6663e7Fa3eAAAB562e2fF4419e12f7
+Deployment completed successfully!
+=== Deployment Summary ===
+ERC20Mock: 0x4cbab4a37aa1d9f7a8c23f636625843cdaff3375
+SettelmentsControl impl: 0x5af91d78ce975037ab16d1402e3064848b411019
+Proxy: 0x51de3ac5b5cdf4496c5b793a98b1a103e6675386
+Admin: 0x5c8630069c6663e7Fa3eAAAB562e2fF4419e12f7
