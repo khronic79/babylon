@@ -1,0 +1,70 @@
+type BackFundsToClient @entity(immutable: true) {
+  id: Bytes!
+  userId: String! # string
+  reciever: Bytes! # address
+  amount: BigInt! # uint256
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type BalanceUpdated @entity(immutable: true) {
+  id: Bytes!
+  user: Bytes! # address
+  newBalance: BigInt! # uint256
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type ChangeAdmin @entity(immutable: true) {
+  id: Bytes!
+  newAdmin: Bytes! # address
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type Initialized @entity(immutable: true) {
+  id: Bytes!
+  version: BigInt! # uint64
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type PaymentClientToNative @entity(immutable: true) {
+  id: Bytes!
+  clientId: String! # string
+  clientBalance: BigInt! # uint256
+  nativeId: String! # string
+  nativeBalance: BigInt! # uint256
+  amount: BigInt! # uint256
+  sessionId: String! # string
+  timestamp: BigInt! # uint256
+  minutesQty: BigInt! # uint256
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type TopUpClientBalance @entity(immutable: true) {
+  id: Bytes!
+  userId: String! # string
+  amount: BigInt! # uint256
+  currentClientBalance: BigInt! # uint256
+  sender: Bytes! # address
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type WithdrawFundsToNative @entity(immutable: true) {
+  id: Bytes!
+  userId: String! # string
+  reciever: Bytes! # address
+  amount: BigInt! # uint256
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
