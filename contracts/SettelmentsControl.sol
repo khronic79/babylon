@@ -10,6 +10,10 @@ import {
     Initializable
 } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
+// Добавить логику возможности смены адреса платежного токена
+// Добавить логику возможности выбора оплаты несколькими токенами (стейбеламиы)
+
+// Необходимо отказаться от Multicall (или добавиться возможности его делать)
 contract SettelmentsControl is Multicall, Initializable {
     using SafeERC20 for IERC20;
 
@@ -36,6 +40,7 @@ contract SettelmentsControl is Multicall, Initializable {
         uint256 timestamp,
         uint256 minutesQty
     );
+    // Лишнее событие. Убрать в следующей иттерации
     event BalanceUpdated(address indexed user, uint256 newBalance);
     event WithdrawFundsToNative(
         string userId,
@@ -123,6 +128,7 @@ contract SettelmentsControl is Multicall, Initializable {
         );
     }
 
+    // Сюда добавить комиссию сервису (установить еще одну переменную и сеттер для нее)
     function paymentClientToNative(
         string calldata clientId,
         string calldata nativeId,

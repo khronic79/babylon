@@ -68,3 +68,50 @@ type WithdrawFundsToNative @entity(immutable: true) {
   blockTimestamp: BigInt!
   transactionHash: Bytes!
 }
+
+type Counter @entity(immutable: false) {
+  id: ID! # 'client' | 'native'
+  value: BigInt!
+}
+
+enum TxDirection {
+  IN
+  OUT
+}
+
+enum ClientTxType {
+  TOPUP
+  SERVICE_FEE
+  BACK_FUNDS
+}
+
+type ClientBalanceHistory @entity(immutable: true) {
+  id: ID!
+  clientId: String!
+  txType: ClientTxType!
+  txDirection: TxDirection!
+  txAccountigTime: BigInt!
+  txHash: Bytes!
+  amount: BigInt!
+  sessionId: String
+  sessionStartTime: BigInt
+  minutesQty: BigInt
+}
+
+enum NativeTxType {
+  WITHDRAW
+  COMPENSATION
+}
+
+type NativeBalanceHistory @entity(immutable: true) {
+  id: ID!
+  nativeId: String!
+  txType: ClientTxType!
+  txDirection: TxDirection!
+  txAccountigTime: BigInt!
+  txHash: Bytes!
+  amount: BigInt!
+  sessionId: String
+  sessionStartTime: BigInt
+  minutesQty: BigInt
+}

@@ -11,16 +11,21 @@ import {
   BackFundsToClient,
   BalanceUpdated,
   ChangeAdmin,
+  ClientBalanceHistory,
+  Counter,
   Initialized,
+  NativeBalanceHistory,
   PaymentClientToNative,
   TopUpClientBalance,
-  WithdrawFundsToNative
+  WithdrawFundsToNative,
 } from "../generated/schema"
+import { BigInt } from "@graphprotocol/graph-ts"
 
 export function handleBackFundsToClient(event: BackFundsToClientEvent): void {
   let entity = new BackFundsToClient(
     event.transaction.hash.concatI32(event.logIndex.toI32())
   )
+
   entity.userId = event.params.userId
   entity.reciever = event.params.reciever
   entity.amount = event.params.amount
@@ -30,6 +35,25 @@ export function handleBackFundsToClient(event: BackFundsToClientEvent): void {
   entity.transactionHash = event.transaction.hash
 
   entity.save()
+
+  let counter = Counter.load('client')
+  if (!counter) {
+    counter = new Counter('client')
+    counter.value = BigInt.fromI32(1);
+  }
+
+  let clientBalanceHistory = new ClientBalanceHistory(counter.value.toString())
+  
+  counter.value.plus(BigInt.fromI32(1))
+  counter.save();
+
+  clientBalanceHistory.txType = 'BACK_FUNDS';
+  clientBalanceHistory.txDirection = 'OUT';
+  clientBalanceHistory.txAccountigTime = event.block.timestamp
+  clientBalanceHistory.txHash = event.transaction.hash
+  clientBalanceHistory.amount = event.params.amount
+  clientBalanceHistory.clientId = event.params.userId
+  clientBalanceHistory.save()
 }
 
 export function handleBalanceUpdated(event: BalanceUpdatedEvent): void {
@@ -92,6 +116,51 @@ export function handlePaymentClientToNative(
   entity.transactionHash = event.transaction.hash
 
   entity.save()
+
+  let clientCounter = Counter.load('client')
+  if (!clientCounter) {
+    clientCounter = new Counter('client')
+    clientCounter.value = BigInt.fromI32(1);
+  }
+
+  let clientBalanceHistory = new ClientBalanceHistory(clientCounter.value.toString())
+  
+  clientCounter.value.plus(BigInt.fromI32(1))
+  clientCounter.save();
+
+  clientBalanceHistory.txType = 'SERVICE_FEE';
+  clientBalanceHistory.txDirection = 'OUT';
+  clientBalanceHistory.txAccountigTime = event.block.timestamp
+  clientBalanceHistory.txHash = event.transaction.hash
+  clientBalanceHistory.amount = event.params.amount
+  clientBalanceHistory.clientId = event.params.clientId
+  clientBalanceHistory.sessionId = event.params.sessionId
+  clientBalanceHistory.sessionStartTime = event.params.timestamp
+  clientBalanceHistory.minutesQty = event.params.minutesQty
+  clientBalanceHistory.save()
+
+  let nativeCounter = Counter.load('native')
+  if (!nativeCounter) {
+    nativeCounter = new Counter('native')
+    nativeCounter.value = BigInt.fromI32(1);
+  }
+
+  let nativeBalanceHistory = new NativeBalanceHistory(nativeCounter.value.toString())
+  
+  nativeCounter.value.plus(BigInt.fromI32(1))
+  nativeCounter.save();
+
+  nativeBalanceHistory.txType = 'COMPENSATION';
+  nativeBalanceHistory.txDirection = 'IN';
+  nativeBalanceHistory.txAccountigTime = event.block.timestamp
+  nativeBalanceHistory.txHash = event.transaction.hash
+  nativeBalanceHistory.amount = event.params.amount
+  nativeBalanceHistory.nativeId = event.params.nativeId
+  nativeBalanceHistory.sessionId = event.params.sessionId
+  nativeBalanceHistory.sessionStartTime = event.params.timestamp
+  nativeBalanceHistory.minutesQty = event.params.minutesQty
+  nativeBalanceHistory.save()
+
 }
 
 export function handleTopUpClientBalance(event: TopUpClientBalanceEvent): void {
@@ -108,6 +177,25 @@ export function handleTopUpClientBalance(event: TopUpClientBalanceEvent): void {
   entity.transactionHash = event.transaction.hash
 
   entity.save()
+
+  let clientCounter = Counter.load('client')
+  if (!clientCounter) {
+    clientCounter = new Counter('client')
+    clientCounter.value = BigInt.fromI32(1);
+  }
+
+  let clientBalanceHistory = new ClientBalanceHistory(clientCounter.value.toString())
+  
+  clientCounter.value.plus(BigInt.fromI32(1))
+  clientCounter.save();
+
+  clientBalanceHistory.txType = 'TOPUP';
+  clientBalanceHistory.txDirection = 'IN';
+  clientBalanceHistory.txAccountigTime = event.block.timestamp
+  clientBalanceHistory.txHash = event.transaction.hash
+  clientBalanceHistory.amount = event.params.amount
+  clientBalanceHistory.clientId = event.params.userId
+  clientBalanceHistory.save()
 }
 
 export function handleWithdrawFundsToNative(
@@ -125,4 +213,23 @@ export function handleWithdrawFundsToNative(
   entity.transactionHash = event.transaction.hash
 
   entity.save()
+
+  let nativeCounter = Counter.load('native')
+  if (!nativeCounter) {
+    nativeCounter = new Counter('native')
+    nativeCounter.value = BigInt.fromI32(1);
+  }
+
+  let nativeBalanceHistory = new NativeBalanceHistory(nativeCounter.value.toString())
+  
+  nativeCounter.value.plus(BigInt.fromI32(1))
+  nativeCounter.save();
+
+  nativeBalanceHistory.txType = 'WITHDRAW';
+  nativeBalanceHistory.txDirection = 'OUT';
+  nativeBalanceHistory.txAccountigTime = event.block.timestamp
+  nativeBalanceHistory.txHash = event.transaction.hash
+  nativeBalanceHistory.amount = event.params.amount
+  nativeBalanceHistory.nativeId = event.params.userId
+  nativeBalanceHistory.save()
 }
