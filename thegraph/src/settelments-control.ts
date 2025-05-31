@@ -39,12 +39,12 @@ export function handleBackFundsToClient(event: BackFundsToClientEvent): void {
   let counter = Counter.load('client')
   if (!counter) {
     counter = new Counter('client')
-    counter.value = BigInt.fromI32(1);
+    counter.value = 1;
   }
 
-  let clientBalanceHistory = new ClientBalanceHistory(counter.value.toString())
+  let clientBalanceHistory = new ClientBalanceHistory(counter.value)
   
-  counter.value.plus(BigInt.fromI32(1))
+  counter.value += 1 
   counter.save();
 
   clientBalanceHistory.txType = 'BACK_FUNDS';
@@ -120,12 +120,12 @@ export function handlePaymentClientToNative(
   let clientCounter = Counter.load('client')
   if (!clientCounter) {
     clientCounter = new Counter('client')
-    clientCounter.value = BigInt.fromI32(1);
+    clientCounter.value = 1;
   }
 
-  let clientBalanceHistory = new ClientBalanceHistory(clientCounter.value.toString())
+  let clientBalanceHistory = new ClientBalanceHistory(clientCounter.value)
   
-  clientCounter.value.plus(BigInt.fromI32(1))
+  clientCounter.value += 1
   clientCounter.save();
 
   clientBalanceHistory.txType = 'SERVICE_FEE';
@@ -142,12 +142,12 @@ export function handlePaymentClientToNative(
   let nativeCounter = Counter.load('native')
   if (!nativeCounter) {
     nativeCounter = new Counter('native')
-    nativeCounter.value = BigInt.fromI32(1);
+    nativeCounter.value = 1;
   }
 
-  let nativeBalanceHistory = new NativeBalanceHistory(nativeCounter.value.toString())
+  let nativeBalanceHistory = new NativeBalanceHistory(nativeCounter.value)
   
-  nativeCounter.value.plus(BigInt.fromI32(1))
+  nativeCounter.value += 1
   nativeCounter.save();
 
   nativeBalanceHistory.txType = 'COMPENSATION';
@@ -181,12 +181,12 @@ export function handleTopUpClientBalance(event: TopUpClientBalanceEvent): void {
   let clientCounter = Counter.load('client')
   if (!clientCounter) {
     clientCounter = new Counter('client')
-    clientCounter.value = BigInt.fromI32(1);
+    clientCounter.value = 1;
   }
 
-  let clientBalanceHistory = new ClientBalanceHistory(clientCounter.value.toString())
+  let clientBalanceHistory = new ClientBalanceHistory(clientCounter.value)
   
-  clientCounter.value.plus(BigInt.fromI32(1))
+  clientCounter.value += 1
   clientCounter.save();
 
   clientBalanceHistory.txType = 'TOPUP';
@@ -217,12 +217,12 @@ export function handleWithdrawFundsToNative(
   let nativeCounter = Counter.load('native')
   if (!nativeCounter) {
     nativeCounter = new Counter('native')
-    nativeCounter.value = BigInt.fromI32(1);
+    nativeCounter.value = 1;
   }
 
-  let nativeBalanceHistory = new NativeBalanceHistory(nativeCounter.value.toString())
+  let nativeBalanceHistory = new NativeBalanceHistory(nativeCounter.value)
   
-  nativeCounter.value.plus(BigInt.fromI32(1))
+  nativeCounter.value += 1
   nativeCounter.save();
 
   nativeBalanceHistory.txType = 'WITHDRAW';

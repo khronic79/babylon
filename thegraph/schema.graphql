@@ -71,7 +71,7 @@ type WithdrawFundsToNative @entity(immutable: true) {
 
 type Counter @entity(immutable: false) {
   id: ID! # 'client' | 'native'
-  value: BigInt!
+  value: Int8!
 }
 
 enum TxDirection {
@@ -86,7 +86,7 @@ enum ClientTxType {
 }
 
 type ClientBalanceHistory @entity(immutable: true) {
-  id: ID!
+  id: Int8!
   clientId: String!
   txType: ClientTxType!
   txDirection: TxDirection!
@@ -104,7 +104,7 @@ enum NativeTxType {
 }
 
 type NativeBalanceHistory @entity(immutable: true) {
-  id: ID!
+  id: Int8!
   nativeId: String!
   txType: ClientTxType!
   txDirection: TxDirection!
