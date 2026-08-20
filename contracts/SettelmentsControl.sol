@@ -41,70 +41,36 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
         string nonce;
     }
 
+    struct SettelmentContext {
+        string clientId;
+        uint256 clientBalance;
+        string nativeId;
+        address nativeAddress;
+        uint256 amountToNative;
+        string sessionId;
+        uint256 timestamp;
+        uint256 minutesQty;
+        uint256 feePercentage;
+        uint256 feeAmount;
+        address feeCollector;
+    }
+
     event TopUpClientBalance(
         string userId,
         uint256 amount,
         uint256 currentClientBalance,
         address sender
     );
-    event PaymentClientToNative(
-        string clientId,
-        uint256 clientBalance,
-        string nativeId,
-        address nativeAddress,
-        uint256 amountToNative,
-        string sessionId,
-        uint256 timestamp,
-        uint256 minutesQty,
-        uint256 feePercentage,
-        uint256 feeAmount,
-        address feeCollector
-    );
+    event PaymentClientToNative(SettelmentContext ctx);
     event NativeAddressSet(string indexed nativeId, address nativeAddress);
     event BackFundsToClient(string userId, address reciever, uint256 amount);
     event ChangeAdmin(address newAdmin);
 
     error OnlyAdmin();
     error OnlyOwner();
-    error InsufficientClientBalanceForSessionSettelment(
-        string clientId,
-        uint256 clientBalance,
-        string nativeId,
-        address nativeAddress,
-        uint256 amountToNative,
-        string sessionId,
-        uint256 timestamp,
-        uint256 minutesQty,
-        uint256 feePercentage,
-        uint256 feeAmount,
-        address feeCollector   
-    );
-    error NativeAddressIsOutForSessionSettelment(
-        string clientId,
-        uint256 clientBalance,
-        string nativeId,
-        address nativeAddress,
-        uint256 amountToNative,
-        string sessionId,
-        uint256 timestamp,
-        uint256 minutesQty,
-        uint256 feePercentage,
-        uint256 feeAmount,
-        address feeCollector    
-    );
-    error InsufficientContractBalanceForSessionSettelment(
-        string clientId,
-        uint256 clientBalance,
-        string nativeId,
-        address nativeAddress,
-        uint256 amountToNative,
-        string sessionId,
-        uint256 timestamp,
-        uint256 minutesQty,
-        uint256 feePercentage,
-        uint256 feeAmount,
-        address feeCollector    
-    );
+    error InsufficientClientBalanceForSessionSettelment(SettelmentContext ctx);
+    error NativeAddressIsOutForSessionSettelment(SettelmentContext ctx);
+    error InsufficientContractBalanceForSessionSettelment(SettelmentContext ctx);
 
     error InsufficientClientBalanceForBackFunds(
         string clientId,
@@ -234,6 +200,39 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
         );
     }
 
+    function _buildSettelmentContext(
+        string calldata clientId,
+        string calldata nativeId,
+        uint256 amount,
+        string calldata sessionId,
+        uint256 timestamp,
+        uint256 minutesQty
+    ) internal view returns (SettelmentContext memory ctx) {
+        uint256 clientBalanceAmount = _getContractStorage()
+            .clientBalances[keccak256(abi.encodePacked(clientId))].balance;
+
+        address nativeAddress = _getContractStorage()
+            .nativeAddresses[keccak256(abi.encodePacked(nativeId))];
+
+        uint256 feePercentage = _getContractStorage().feePercentage;
+        address feeCollector = _getContractStorage().feeCollector;
+
+        uint256 feeAmount = (amount * feePercentage) / 100;
+        uint256 amountToNative = amount - feeAmount;
+
+        ctx.clientId = clientId;
+        ctx.clientBalance = clientBalanceAmount;
+        ctx.nativeId = nativeId;
+        ctx.nativeAddress = nativeAddress;
+        ctx.amountToNative = amountToNative;
+        ctx.sessionId = sessionId;
+        ctx.timestamp = timestamp;
+        ctx.minutesQty = minutesQty;
+        ctx.feePercentage = feePercentage;
+        ctx.feeAmount = feeAmount;
+        ctx.feeCollector = feeCollector;
+    }
+
     function paymentClientToNative(
         string calldata clientId,
         string calldata nativeId,
@@ -244,103 +243,44 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
     ) external onlyAdmin {
         require(amount > 0, "Settlement amount between client and native must be > 0");
 
-        ContractStorage storage $ = _getContractStorage();
+        bytes32 clientHash = keccak256(abi.encodePacked(clientId));
 
-        ClientBalance storage clientBalance = $.clientBalances[
-            keccak256(abi.encodePacked(clientId))
-        ];
+        SettelmentContext memory ctx = _buildSettelmentContext(
+            clientId,
+            nativeId,
+            amount,
+            sessionId,
+            timestamp,
+            minutesQty
+        );
 
-        uint256 clientBalanceAmount = clientBalance.balance;
-
-        address nativeAddress = $.nativeAddresses[
-            keccak256(abi.encodePacked(nativeId))
-        ];
-
-        uint256 feeAmount = 0;
-
-        address feeCollector = $.feeCollector;
-
-        uint256 feePercentage = $.feePercentage;
-        
-        feeAmount = (amount * feePercentage) / 100;
-        
-        uint256 amountToNative = amount - feeAmount;
-
-        if (nativeAddress == address(0)) {
-            revert NativeAddressIsOutForSessionSettelment(
-                clientId,
-                clientBalanceAmount,
-                nativeId,
-                nativeAddress,
-                amount,
-                sessionId,
-                timestamp,
-                minutesQty,
-                feePercentage,
-                feeAmount,
-                feeCollector
-            );
+        if (ctx.nativeAddress == address(0)) {
+            revert NativeAddressIsOutForSessionSettelment(ctx);
         }
 
-        if (clientBalanceAmount < amount) {
-            revert InsufficientClientBalanceForSessionSettelment(
-                clientId,
-                clientBalanceAmount,
-                nativeId,
-                nativeAddress,
-                amount,
-                sessionId,
-                timestamp,
-                minutesQty,
-                feePercentage,
-                feeAmount,
-                feeCollector
-            );
+        if (ctx.clientBalance < amount) {
+            revert InsufficientClientBalanceForSessionSettelment(ctx);
         }
 
-        IERC20WithAuthorization token = $.token;
+        IERC20WithAuthorization token = _getContractStorage().token;
 
         uint256 contractBalance = token.balanceOf(address(this));
 
         if (contractBalance < amount) {
-            revert InsufficientContractBalanceForSessionSettelment(
-                clientId,
-                clientBalanceAmount,
-                nativeId,
-                nativeAddress,
-                amount,
-                sessionId,
-                timestamp,
-                minutesQty,
-                feePercentage,
-                feeAmount,
-                feeCollector
-            );
+            revert InsufficientContractBalanceForSessionSettelment(ctx);
         }
 
-        if (amountToNative > 0) {
-            token.safeTransfer(nativeAddress, amountToNative);
+        if (ctx.amountToNative > 0) {
+            token.safeTransfer(ctx.nativeAddress, ctx.amountToNative);
         }
 
-        if (feeAmount > 0) {
-            token.safeTransfer(feeCollector, feeAmount);
+        if (ctx.feeAmount > 0) {
+            token.safeTransfer(ctx.feeCollector, ctx.feeAmount);
         }
 
-        clientBalance.balance -= amount;
+        _getContractStorage().clientBalances[clientHash].balance -= amount;
 
-        emit PaymentClientToNative(
-            clientId,
-            clientBalanceAmount,
-            nativeId,
-            nativeAddress,
-            amount,
-            sessionId,
-            timestamp,
-            minutesQty,
-            feePercentage,
-            feeAmount,
-            feeCollector
-        );
+        emit PaymentClientToNative(ctx);
     }
 
     function backFundsToClient(
