@@ -11,6 +11,9 @@ import {
 import {
     EIP712Upgradeable
 } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
+import {
+    ECDSA
+} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 interface IERC20WithAuthorization is IERC20 {
     function receiveWithAuthorization(
@@ -33,12 +36,6 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
     struct ClientBalance {
         uint256 balance;
         address lastInboundAddress;
-    }
-
-    struct NativeAddressAssignment {
-        string nativeId;
-        address nativeAddress;
-        string nonce;
     }
 
     struct SettelmentContext {
@@ -65,6 +62,7 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
     event NativeAddressSet(string indexed nativeId, address nativeAddress);
     event BackFundsToClient(string userId, address reciever, uint256 amount);
     event ChangeAdmin(address newAdmin);
+    event MaxValiditySet(uint256 maxValidity);
 
     error OnlyAdmin();
     error OnlyOwner();
@@ -92,13 +90,19 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
     error EmptyNonce();
     error FeeTooHigh(uint256 feePercentage);
     error InvalidFeeCollector();
+    error SignatureExpired();
+    error DeadlineTooFar();
+    error InvalidMaxValidity();
+    error InvalidAdmin();
 
     // keccak256(abi.encode(uint256(keccak256("SettelmentControle.storage")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant STORAGE_LOCATION =
         0x52df78793d2feb0b7400eb8844c172999e80c8fc4fe2452bac344eccb4e8cb00;
 
     bytes32 private constant ASSIGNMENT_TYPEHASH =
-        keccak256("NativeAddressAssignment(string nativeId,address nativeAddress,string nonce)");
+        keccak256(
+            "NativeAddressAssignment(string nativeId,address nativeAddress,string nonce,uint256 deadline)"
+        );
 
     struct ContractStorage {
         mapping(bytes32 => ClientBalance) clientBalances;
@@ -109,6 +113,7 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
         address owner;
         uint256 feePercentage;
         address feeCollector;
+        uint256 maxValidity;
     }
 
     constructor() {
@@ -147,16 +152,19 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
         address _admin,
         address _owner,
         uint256 _feePercentage,
-        address _feeCollector
+        address _feeCollector,
+        uint256 _maxValidity
     ) external initializer {
         __EIP712_init("SettelmentsControl", "1.0");
         if (_feePercentage > 100) revert FeeTooHigh(_feePercentage);
+        if (_maxValidity == 0) revert InvalidMaxValidity();
         ContractStorage storage $ = _getContractStorage();
         $.token = IERC20WithAuthorization(_token);
         $.admin = _admin;
         $.owner = _owner;
         $.feePercentage = _feePercentage;
         $.feeCollector = _feeCollector;
+        $.maxValidity = _maxValidity;
         emit ChangeAdmin(_admin);
     }
 
@@ -333,7 +341,8 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
     }
 
 
-    function changeAdmin(address newAdmin) external onlyAdmin {
+    function changeAdmin(address newAdmin) external onlyOwner {
+        if (newAdmin == address(0)) revert InvalidAdmin();
         ContractStorage storage $ = _getContractStorage();
         $.admin = newAdmin;
         emit ChangeAdmin(newAdmin);
@@ -344,16 +353,58 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
         return $.admin;
     }
 
+    function getMaxValidity() external view returns (uint256) {
+        return _getContractStorage().maxValidity;
+    }
+
+    function setMaxValidity(uint256 newMaxValidity) external onlyOwner {
+        if (newMaxValidity == 0) revert InvalidMaxValidity();
+        _getContractStorage().maxValidity = newMaxValidity;
+        emit MaxValiditySet(newMaxValidity);
+    }
+
     function isNonceUsed(string calldata nonce) external view returns (bool) {
         ContractStorage storage $ = _getContractStorage();
         bytes32 nonceHash = keccak256(abi.encodePacked(nonce));
         return $.usedNonces[nonceHash];
     }
 
+    function _verifyAssignmentSignature(
+        string calldata nativeId,
+        address nativeAddress,
+        string calldata nonce,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) internal view {
+        bytes32 structHash = keccak256(
+            abi.encode(
+                ASSIGNMENT_TYPEHASH,
+                keccak256(bytes(nativeId)),
+                nativeAddress,
+                keccak256(bytes(nonce)),
+                deadline
+            )
+        );
+
+        (address signer, ECDSA.RecoverError err, ) = ECDSA.tryRecover(
+            _hashTypedDataV4(structHash),
+            v,
+            r,
+            s
+        );
+
+        if (err != ECDSA.RecoverError.NoError || signer != nativeAddress) {
+            revert InvalidSignature();
+        }
+    }
+
     function setNativeAddressWithSignature(
         string calldata nativeId,
         address nativeAddress,
         string calldata nonce,
+        uint256 deadline,
         uint8 v,
         bytes32 r,
         bytes32 s
@@ -376,28 +427,27 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
             revert NonceAlreadyUsed();
         }
 
-        bytes32 structHash = keccak256(
-            abi.encode(
-                ASSIGNMENT_TYPEHASH,
-                keccak256(bytes(nativeId)),
-                nativeAddress,
-                keccak256(bytes(nonce))
-            )
-        );
-        
-        bytes32 digest = _hashTypedDataV4(structHash);
-        
-        address signer = ecrecover(digest, v, r, s);
-
-        if (signer == address(0)) {
-            revert InvalidSignature();
+        if (block.timestamp > deadline) {
+            revert SignatureExpired();
         }
+
+        if (deadline - block.timestamp > $.maxValidity) {
+            revert DeadlineTooFar();
+        }
+
+        _verifyAssignmentSignature(
+            nativeId,
+            nativeAddress,
+            nonce,
+            deadline,
+            v,
+            r,
+            s
+        );
 
         $.usedNonces[nonceHash] = true;
 
-        bytes32 nativeHash = keccak256(abi.encodePacked(nativeId));
-
-        $.nativeAddresses[nativeHash] = nativeAddress;
+        $.nativeAddresses[keccak256(abi.encodePacked(nativeId))] = nativeAddress;
 
         emit NativeAddressSet(nativeId, nativeAddress);
     }
