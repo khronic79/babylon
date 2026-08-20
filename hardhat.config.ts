@@ -15,33 +15,33 @@ const config: HardhatUserConfig = {
     },
   },
   networks: {
-    polygonAmoy: {
-      url: process.env.NETWORK_URL as string,
-      chainId: 80002,
-      accounts: [process.env.PRIVATE_KEY as string],
-      timeout: 120000
-    },
-    hardhat: {
-      chainId: 31337,
-    },
+    // polygonAmoy: {
+    //   url: process.env.NETWORK_URL as string,
+    //   chainId: 80002,
+    //   accounts: [process.env.PRIVATE_KEY as string],
+    //   timeout: 120000
+    // },
+    // hardhat: {
+    //   chainId: 31337,
+    // },
   },
   gasReporter: {
     enabled: true,
   },
   etherscan: {
-    apiKey: {
-      polygonAmoy: process.env.AMOY_POLYGON_APIKEY as string
-    },
-    customChains: [
-      {
-        network: "polygonAmoy",
-        chainId: 80002,
-        urls: {
-          apiURL: "https://api-amoy.polygonscan.com/api",
-          browserURL: "https://amoy.polygonscan.com/",
-        },
-      }
-    ]
+    // apiKey: {
+    //   polygonAmoy: process.env.AMOY_POLYGON_APIKEY as string
+    // },
+    // customChains: [
+    //   {
+    //     network: "polygonAmoy",
+    //     chainId: 80002,
+    //     urls: {
+    //       apiURL: "https://api-amoy.polygonscan.com/api",
+    //       browserURL: "https://amoy.polygonscan.com/",
+    //     },
+    //   }
+    // ]
   },
 };
 

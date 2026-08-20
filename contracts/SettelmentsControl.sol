@@ -5,24 +5,41 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {
     SafeERC20
 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Multicall} from "@openzeppelin/contracts/utils/Multicall.sol";
 import {
     Initializable
 } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {
+    EIP712Upgradeable
+} from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 
-// Добавить логику возможности смены адреса платежного токена
-// Добавить логику возможности выбора оплаты несколькими токенами (стейбеламиы)
+interface IERC20WithAuthorization is IERC20 {
+    function receiveWithAuthorization(
+        address from,
+        address to,
+        uint256 value,
+        uint256 validAfter,
+        uint256 validBefore,
+        bytes32 nonce,
+        uint8 v,
+        bytes32 r,
+        bytes32 s        
+    ) external;
+}
 
-// Необходимо отказаться от Multicall (или добавиться возможности его делать)
-contract SettelmentsControl is Multicall, Initializable {
-    using SafeERC20 for IERC20;
 
-    struct Balance {
-        uint256 clientBalance;
-        uint256 nativeBalance;
+contract SettelmentsControl is Initializable, EIP712Upgradeable {
+    using SafeERC20 for IERC20WithAuthorization;
+
+    struct ClientBalance {
+        uint256 balance;
+        address lastInboundAddress;
     }
 
-    address public owner;
+    struct NativeAddressAssignment {
+        string nativeId;
+        address nativeAddress;
+        string nonce;
+    }
 
     event TopUpClientBalance(
         string userId,
@@ -34,40 +51,102 @@ contract SettelmentsControl is Multicall, Initializable {
         string clientId,
         uint256 clientBalance,
         string nativeId,
-        uint256 nativeBalance,
-        uint256 amount,
+        address nativeAddress,
+        uint256 amountToNative,
         string sessionId,
         uint256 timestamp,
-        uint256 minutesQty
+        uint256 minutesQty,
+        uint256 feePercentage,
+        uint256 feeAmount,
+        address feeCollector
     );
-    // Лишнее событие. Убрать в следующей иттерации
-    event BalanceUpdated(address indexed user, uint256 newBalance);
-    event WithdrawFundsToNative(
-        string userId,
-        address reciever,
-        uint256 amount
-    );
+    event NativeAddressSet(string indexed nativeId, address nativeAddress);
     event BackFundsToClient(string userId, address reciever, uint256 amount);
     event ChangeAdmin(address newAdmin);
 
     error OnlyAdmin();
-    error InsufficientClientBalance(uint256 amount, uint256 clientBalance);
-    error InsufficientNativeBalance(uint256 amount, uint256 nativeBalance);
-    error NotThisBalanceType(uint256 balanceType);
-    error InitializeOnlyByInitializer();
+    error OnlyOwner();
+    error InsufficientClientBalanceForSessionSettelment(
+        string clientId,
+        uint256 clientBalance,
+        string nativeId,
+        address nativeAddress,
+        uint256 amountToNative,
+        string sessionId,
+        uint256 timestamp,
+        uint256 minutesQty,
+        uint256 feePercentage,
+        uint256 feeAmount,
+        address feeCollector   
+    );
+    error NativeAddressIsOutForSessionSettelment(
+        string clientId,
+        uint256 clientBalance,
+        string nativeId,
+        address nativeAddress,
+        uint256 amountToNative,
+        string sessionId,
+        uint256 timestamp,
+        uint256 minutesQty,
+        uint256 feePercentage,
+        uint256 feeAmount,
+        address feeCollector    
+    );
+    error InsufficientContractBalanceForSessionSettelment(
+        string clientId,
+        uint256 clientBalance,
+        string nativeId,
+        address nativeAddress,
+        uint256 amountToNative,
+        string sessionId,
+        uint256 timestamp,
+        uint256 minutesQty,
+        uint256 feePercentage,
+        uint256 feeAmount,
+        address feeCollector    
+    );
 
-    // TODO При деплое необходимо изменить адрес
-    address public constant INITIALIZER_ADDRESS =
-        0x5c8630069c6663e7Fa3eAAAB562e2fF4419e12f7;
+    error InsufficientClientBalanceForBackFunds(
+        string clientId,
+        address clientAddress,
+        uint256 amount,
+        uint256 clientBalance
+    );
+
+    error InsufficientContractBalanceForBackFunds(
+        string clientId,
+        address clientAddress,
+        uint256 amount,
+        uint256 clientBalance
+    );
+    error InvalidSignature();
+    error NonceAlreadyUsed();
+    error InvalidNativeAddress();
+    error EmptyNativeId();
+    error EmptyNonce();
+    error FeeTooHigh(uint256 feePercentage);
+    error InvalidFeeCollector();
 
     // keccak256(abi.encode(uint256(keccak256("SettelmentControle.storage")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant STORAGE_LOCATION =
         0x52df78793d2feb0b7400eb8844c172999e80c8fc4fe2452bac344eccb4e8cb00;
 
+    bytes32 private constant ASSIGNMENT_TYPEHASH =
+        keccak256("NativeAddressAssignment(string nativeId,address nativeAddress,string nonce)");
+
     struct ContractStorage {
-        mapping(bytes32 => Balance) balances;
-        IERC20 token;
+        mapping(bytes32 => ClientBalance) clientBalances;
+        mapping(bytes32 => address) nativeAddresses;
+        mapping(bytes32 => bool) usedNonces;
+        IERC20WithAuthorization token;
         address admin;
+        address owner;
+        uint256 feePercentage;
+        address feeCollector;
+    }
+
+    constructor() {
+        _disableInitializers();
     }
 
     function _getContractStorage()
@@ -89,46 +168,72 @@ contract SettelmentsControl is Multicall, Initializable {
         _;
     }
 
-    modifier onlyInitializer() {
-        if (msg.sender != INITIALIZER_ADDRESS) {
-            revert InitializeOnlyByInitializer();
+    modifier onlyOwner() {
+        ContractStorage storage $ = _getContractStorage();
+        if (msg.sender != $.owner) {
+            revert OnlyOwner();
         }
         _;
     }
 
     function initialize(
         address _token,
-        address admin
-    ) external initializer onlyInitializer {
+        address _admin,
+        address _owner,
+        uint256 _feePercentage,
+        address _feeCollector
+    ) external initializer {
+        __EIP712_init("SettelmentsControl", "1.0");
+        if (_feePercentage > 100) revert FeeTooHigh(_feePercentage);
         ContractStorage storage $ = _getContractStorage();
-        $.token = IERC20(_token);
-        $.admin = admin;
-        emit ChangeAdmin(admin);
+        $.token = IERC20WithAuthorization(_token);
+        $.admin = _admin;
+        $.owner = _owner;
+        $.feePercentage = _feePercentage;
+        $.feeCollector = _feeCollector;
+        emit ChangeAdmin(_admin);
     }
 
     function topUpClientBalance(
-        uint256 amount,
-        string calldata userId
-    ) external {
+        string calldata userId,
+        address from,
+        uint256 value,
+        uint256 validAfter,
+        uint256 validBefore,
+        bytes32 nonce,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external onlyAdmin {
         ContractStorage storage $ = _getContractStorage();
 
-        Balance storage clientBalance = $.balances[
+        ClientBalance storage clientBalance = $.clientBalances[
             keccak256(abi.encodePacked(userId))
         ];
 
-        $.token.safeTransferFrom(msg.sender, address(this), amount);
+        $.token.receiveWithAuthorization(
+            from,
+            address(this),
+            value,
+            validAfter,
+            validBefore,
+            nonce,
+            v,
+            r,
+            s
+        );
 
-        clientBalance.clientBalance += amount;
+        clientBalance.balance += value;
+        clientBalance.lastInboundAddress = from;
 
         emit TopUpClientBalance(
             userId,
-            amount,
-            clientBalance.clientBalance,
-            msg.sender
+            value,
+            clientBalance.balance,
+            from
         );
     }
 
-    // Сюда добавить комиссию сервису (установить еще одну переменную и сеттер для нее)
     function paymentClientToNative(
         string calldata clientId,
         string calldata nativeId,
@@ -137,93 +242,156 @@ contract SettelmentsControl is Multicall, Initializable {
         uint256 timestamp,
         uint256 minutesQty
     ) external onlyAdmin {
+        require(amount > 0, "Settlement amount between client and native must be > 0");
+
         ContractStorage storage $ = _getContractStorage();
 
-        Balance storage clientBalanceRef = $.balances[
+        ClientBalance storage clientBalance = $.clientBalances[
             keccak256(abi.encodePacked(clientId))
         ];
-        Balance storage nativeBalanceRef = $.balances[
+
+        uint256 clientBalanceAmount = clientBalance.balance;
+
+        address nativeAddress = $.nativeAddresses[
             keccak256(abi.encodePacked(nativeId))
         ];
 
-        if (clientBalanceRef.clientBalance < amount) {
-            revert InsufficientClientBalance(
+        uint256 feeAmount = 0;
+
+        address feeCollector = $.feeCollector;
+
+        uint256 feePercentage = $.feePercentage;
+        
+        feeAmount = (amount * feePercentage) / 100;
+        
+        uint256 amountToNative = amount - feeAmount;
+
+        if (nativeAddress == address(0)) {
+            revert NativeAddressIsOutForSessionSettelment(
+                clientId,
+                clientBalanceAmount,
+                nativeId,
+                nativeAddress,
                 amount,
-                clientBalanceRef.clientBalance
+                sessionId,
+                timestamp,
+                minutesQty,
+                feePercentage,
+                feeAmount,
+                feeCollector
             );
         }
 
-        clientBalanceRef.clientBalance -= amount;
-        nativeBalanceRef.nativeBalance += amount;
+        if (clientBalanceAmount < amount) {
+            revert InsufficientClientBalanceForSessionSettelment(
+                clientId,
+                clientBalanceAmount,
+                nativeId,
+                nativeAddress,
+                amount,
+                sessionId,
+                timestamp,
+                minutesQty,
+                feePercentage,
+                feeAmount,
+                feeCollector
+            );
+        }
+
+        IERC20WithAuthorization token = $.token;
+
+        uint256 contractBalance = token.balanceOf(address(this));
+
+        if (contractBalance < amount) {
+            revert InsufficientContractBalanceForSessionSettelment(
+                clientId,
+                clientBalanceAmount,
+                nativeId,
+                nativeAddress,
+                amount,
+                sessionId,
+                timestamp,
+                minutesQty,
+                feePercentage,
+                feeAmount,
+                feeCollector
+            );
+        }
+
+        if (amountToNative > 0) {
+            token.safeTransfer(nativeAddress, amountToNative);
+        }
+
+        if (feeAmount > 0) {
+            token.safeTransfer(feeCollector, feeAmount);
+        }
+
+        clientBalance.balance -= amount;
 
         emit PaymentClientToNative(
             clientId,
-            clientBalanceRef.clientBalance,
+            clientBalanceAmount,
             nativeId,
-            nativeBalanceRef.nativeBalance,
+            nativeAddress,
             amount,
             sessionId,
             timestamp,
-            minutesQty
+            minutesQty,
+            feePercentage,
+            feeAmount,
+            feeCollector
         );
-    }
-
-    function withdrawFundsToNative(
-        string calldata userId,
-        address receiver,
-        uint256 amount
-    ) external onlyAdmin {
-        ContractStorage storage $ = _getContractStorage();
-        Balance storage balanceRef = $.balances[
-            keccak256(abi.encodePacked(userId))
-        ];
-
-        uint256 currentBalance = balanceRef.nativeBalance;
-        if (currentBalance < amount) {
-            revert InsufficientNativeBalance(amount, currentBalance);
-        }
-
-        balanceRef.nativeBalance = currentBalance - amount;
-        $.token.safeTransfer(receiver, amount);
-
-        emit WithdrawFundsToNative(userId, receiver, amount);
     }
 
     function backFundsToClient(
         string calldata userId,
-        address receiver,
         uint256 amount
     ) external onlyAdmin {
+        require(amount > 0, "Back fund amount to client must be > 0");
         ContractStorage storage $ = _getContractStorage();
-        Balance storage balanceRef = $.balances[
+        ClientBalance storage balance = $.clientBalances[
             keccak256(abi.encodePacked(userId))
         ];
-
-        uint256 currentBalance = balanceRef.clientBalance;
+        address lastAddress = balance.lastInboundAddress;
+        uint256 currentBalance = balance.balance;
         if (currentBalance < amount) {
-            revert InsufficientNativeBalance(amount, currentBalance);
+            revert InsufficientClientBalanceForBackFunds(
+                userId,
+                lastAddress,
+                amount,
+                currentBalance
+            );
         }
 
-        balanceRef.clientBalance = currentBalance - amount;
+        IERC20WithAuthorization token = $.token;
 
-        $.token.safeTransfer(receiver, amount);
+        uint256 contractBalance = token.balanceOf(address(this));
 
-        emit BackFundsToClient(userId, receiver, amount);
+        if (contractBalance < amount) {
+            revert InsufficientContractBalanceForBackFunds(
+                userId,
+                lastAddress,
+                amount,
+                currentBalance
+            );
+        }
+        
+        token.safeTransfer(lastAddress, amount);
+
+        balance.balance = currentBalance - amount;
+
+        emit BackFundsToClient(userId, lastAddress, amount);
     }
 
     function getBalance(
         string calldata userId
-    ) external view returns (Balance memory) {
+    ) external view returns (ClientBalance memory) {
         bytes32 userHash = keccak256(abi.encodePacked(userId));
         ContractStorage storage $ = _getContractStorage();
-        Balance memory userBalance = $.balances[userHash];
+        ClientBalance memory userBalance = $.clientBalances[userHash];
         return userBalance;
     }
 
-    function withdrawTokens(address to, uint256 amount) external onlyAdmin {
-        ContractStorage storage $ = _getContractStorage();
-        $.token.safeTransfer(to, amount);
-    }
 
     function changeAdmin(address newAdmin) external onlyAdmin {
         ContractStorage storage $ = _getContractStorage();
@@ -234,5 +402,96 @@ contract SettelmentsControl is Multicall, Initializable {
     function getAdmin() external view returns (address) {
         ContractStorage storage $ = _getContractStorage();
         return $.admin;
+    }
+
+    function isNonceUsed(string calldata nonce) external view returns (bool) {
+        ContractStorage storage $ = _getContractStorage();
+        bytes32 nonceHash = keccak256(abi.encodePacked(nonce));
+        return $.usedNonces[nonceHash];
+    }
+
+    function setNativeAddressWithSignature(
+        string calldata nativeId,
+        address nativeAddress,
+        string calldata nonce,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external onlyAdmin {
+
+        if (bytes(nativeId).length == 0) {
+            revert EmptyNativeId();
+        }
+        if (nativeAddress == address(0)) {
+            revert InvalidNativeAddress();
+        }
+        if (bytes(nonce).length == 0) {
+            revert EmptyNonce();
+        }
+
+        ContractStorage storage $ = _getContractStorage();
+
+        bytes32 nonceHash = keccak256(abi.encodePacked(nonce));
+        if ($.usedNonces[nonceHash]) {
+            revert NonceAlreadyUsed();
+        }
+
+        bytes32 structHash = keccak256(
+            abi.encode(
+                ASSIGNMENT_TYPEHASH,
+                keccak256(bytes(nativeId)),
+                nativeAddress,
+                keccak256(bytes(nonce))
+            )
+        );
+        
+        bytes32 digest = _hashTypedDataV4(structHash);
+        
+        address signer = ecrecover(digest, v, r, s);
+
+        if (signer == address(0)) {
+            revert InvalidSignature();
+        }
+
+        $.usedNonces[nonceHash] = true;
+
+        bytes32 nativeHash = keccak256(abi.encodePacked(nativeId));
+
+        $.nativeAddresses[nativeHash] = nativeAddress;
+
+        emit NativeAddressSet(nativeId, nativeAddress);
+    }
+
+    function getNativeAddress(
+        string calldata nativeId
+    ) external view returns (address) {
+        bytes32 nativeHash = keccak256(abi.encodePacked(nativeId));
+        ContractStorage storage $ = _getContractStorage();
+        return $.nativeAddresses[nativeHash];
+    }
+
+    function isNativeAddressSet(
+        string calldata nativeId
+    ) external view returns (bool) {
+        bytes32 nativeHash = keccak256(abi.encodePacked(nativeId));
+        ContractStorage storage $ = _getContractStorage();
+        return $.nativeAddresses[nativeHash] != address(0);
+    }
+
+    function setFeeConfig(
+        uint256 feePercentage,
+        address feeCollector
+    ) external onlyAdmin {
+        if (feePercentage > 100) revert FeeTooHigh(feePercentage);
+        if (feeCollector == address(0)) revert InvalidFeeCollector();
+        
+        ContractStorage storage $ = _getContractStorage();
+        $.feePercentage = feePercentage;
+        $.feeCollector = feeCollector;
+    }
+
+    function getFeeConfig() external view returns (uint256 feePercentage, address feeCollector) {
+        ContractStorage storage $ = _getContractStorage();
+        return ($.feePercentage, $.feeCollector);
     }
 }
