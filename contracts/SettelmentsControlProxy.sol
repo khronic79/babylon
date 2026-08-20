@@ -12,7 +12,8 @@ contract SettelmentsControlProxy is ERC1967Proxy {
     error OnlyAdmin();
     error NotAcceptEtherDirectly();
 
-    constructor(address implementation) ERC1967Proxy(implementation, "") {
+    constructor(address implementation, bytes memory data)
+        ERC1967Proxy(implementation, data) {
         ERC1967Utils.changeAdmin(msg.sender);
     }
 
