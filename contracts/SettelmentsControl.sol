@@ -64,6 +64,7 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
     event ChangeAdmin(address newAdmin);
     event MaxValiditySet(uint256 maxValidity);
     event FeeConfigSet(uint256 feePercentage, address feeCollector);
+    event StuckFundsWithdrawn(address token, address to, uint256 amount);
 
     error OnlyAdmin();
     error OnlyOwner();
@@ -97,6 +98,8 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
     error InvalidAdmin();
     error ZeroAddress();
     error ZeroAmount();
+    error InsufficientStuckFunds();
+    error WithdrawalFailed();
 
     // keccak256(abi.encode(uint256(keccak256("SettelmentsControl.storage")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant STORAGE_LOCATION =
@@ -117,6 +120,7 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
         uint256 feePercentage;
         address feeCollector;
         uint256 maxValidity;
+        uint256 totalClientBalance;
     }
 
     constructor() {
@@ -210,6 +214,7 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
         );
 
         clientBalance.balance += value;
+        $.totalClientBalance += value;
         clientBalance.lastInboundAddress = from;
 
         emit TopUpClientBalance(
@@ -299,6 +304,7 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
         }
 
         _getContractStorage().clientBalances[clientHash].balance -= amount;
+        _getContractStorage().totalClientBalance -= amount;
 
         emit PaymentClientToNative(ctx);
     }
@@ -339,6 +345,7 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
         token.safeTransfer(lastAddress, amount);
 
         balance.balance = currentBalance - amount;
+        $.totalClientBalance -= amount;
 
         emit BackFundsToClient(userId, lastAddress, amount);
     }
@@ -496,5 +503,51 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
     function getFeeConfig() external view returns (uint256 feePercentage, address feeCollector) {
         ContractStorage storage $ = _getContractStorage();
         return ($.feePercentage, $.feeCollector);
+    }
+
+    function getTotalClientBalance() external view returns (uint256) {
+        return _getContractStorage().totalClientBalance;
+    }
+
+    function withdrawStuckTokens(
+        address token,
+        address to,
+        uint256 amount
+    ) external onlyOwner {
+        if (amount == 0) revert ZeroAmount();
+        if (to == address(0)) revert ZeroAddress();
+        if (token == address(0)) revert ZeroAddress();
+
+        uint256 contractBalance = IERC20(token).balanceOf(address(this));
+
+        uint256 available;
+        if (token == address(_getContractStorage().token)) {
+            uint256 total = _getContractStorage().totalClientBalance;
+            available = contractBalance > total
+                ? contractBalance - total
+                : 0;
+        } else {
+            available = contractBalance;
+        }
+
+        if (amount > available) revert InsufficientStuckFunds();
+
+        SafeERC20.safeTransfer(IERC20(token), to, amount);
+
+        emit StuckFundsWithdrawn(token, to, amount);
+    }
+
+    function withdrawStuckNative(
+        address payable to,
+        uint256 amount
+    ) external onlyOwner {
+        if (amount == 0) revert ZeroAmount();
+        if (to == address(0)) revert ZeroAddress();
+        if (amount > address(this).balance) revert InsufficientStuckFunds();
+
+        (bool success, ) = to.call{value: amount}("");
+        if (!success) revert WithdrawalFailed();
+
+        emit StuckFundsWithdrawn(address(0), to, amount);
     }
 }
