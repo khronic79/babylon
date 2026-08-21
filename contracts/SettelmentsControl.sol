@@ -63,6 +63,7 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
     event BackFundsToClient(string userId, address reciever, uint256 amount);
     event ChangeAdmin(address newAdmin);
     event MaxValiditySet(uint256 maxValidity);
+    event FeeConfigSet(uint256 feePercentage, address feeCollector);
 
     error OnlyAdmin();
     error OnlyOwner();
@@ -94,10 +95,12 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
     error DeadlineTooFar();
     error InvalidMaxValidity();
     error InvalidAdmin();
+    error ZeroAddress();
+    error ZeroAmount();
 
-    // keccak256(abi.encode(uint256(keccak256("SettelmentControle.storage")) - 1)) & ~bytes32(uint256(0xff))
+    // keccak256(abi.encode(uint256(keccak256("SettelmentsControl.storage")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant STORAGE_LOCATION =
-        0x52df78793d2feb0b7400eb8844c172999e80c8fc4fe2452bac344eccb4e8cb00;
+        0xa3644cd4f32df58f1c4770a51fd2c07989147cd3f86e6250ba65ac2657ec7f00;
 
     bytes32 private constant ASSIGNMENT_TYPEHASH =
         keccak256(
@@ -158,6 +161,14 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
         __EIP712_init("SettelmentsControl", "1.0");
         if (_feePercentage > 100) revert FeeTooHigh(_feePercentage);
         if (_maxValidity == 0) revert InvalidMaxValidity();
+        if (
+            _token == address(0) ||
+            _admin == address(0) ||
+            _owner == address(0) ||
+            _feeCollector == address(0)
+        ) {
+            revert ZeroAddress();
+        }
         ContractStorage storage $ = _getContractStorage();
         $.token = IERC20WithAuthorization(_token);
         $.admin = _admin;
@@ -165,6 +176,7 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
         $.feePercentage = _feePercentage;
         $.feeCollector = _feeCollector;
         $.maxValidity = _maxValidity;
+        emit FeeConfigSet(_feePercentage, _feeCollector);
         emit ChangeAdmin(_admin);
     }
 
@@ -249,7 +261,7 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
         uint256 timestamp,
         uint256 minutesQty
     ) external onlyAdmin {
-        require(amount > 0, "Settlement amount between client and native must be > 0");
+        if (amount == 0) revert ZeroAmount();
 
         bytes32 clientHash = keccak256(abi.encodePacked(clientId));
 
@@ -295,7 +307,7 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
         string calldata userId,
         uint256 amount
     ) external onlyAdmin {
-        require(amount > 0, "Back fund amount to client must be > 0");
+        if (amount == 0) revert ZeroAmount();
         ContractStorage storage $ = _getContractStorage();
         ClientBalance storage balance = $.clientBalances[
             keccak256(abi.encodePacked(userId))
@@ -471,13 +483,14 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
     function setFeeConfig(
         uint256 feePercentage,
         address feeCollector
-    ) external onlyAdmin {
+    ) external onlyOwner {
         if (feePercentage > 100) revert FeeTooHigh(feePercentage);
         if (feeCollector == address(0)) revert InvalidFeeCollector();
         
         ContractStorage storage $ = _getContractStorage();
         $.feePercentage = feePercentage;
         $.feeCollector = feeCollector;
+        emit FeeConfigSet(feePercentage, feeCollector);
     }
 
     function getFeeConfig() external view returns (uint256 feePercentage, address feeCollector) {
