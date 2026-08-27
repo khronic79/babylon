@@ -4,6 +4,7 @@ import hre from "hardhat";
 
 import {
   getClientBalance,
+  randomBytes32,
   useFixture,
   type DeployFixture,
 } from "./helpers/fixture";
@@ -99,6 +100,7 @@ describe("SettelmentsControlProxy", () => {
 
     await fx.control.write.paymentClientToNative(
       [
+        randomBytes32(),
         "client-1",
         "native-1",
         payment,
@@ -114,9 +116,12 @@ describe("SettelmentsControlProxy", () => {
       nativeBefore + 27n * 10n ** 18n,
     );
 
-    await fx.control.write.backFundsToClient(["client-1", refund], {
-      account: fx.clients.admin.account.address,
-    });
+    await fx.control.write.backFundsToClient(
+      [randomBytes32(), "client-1", refund],
+      {
+        account: fx.clients.admin.account.address,
+      },
+    );
 
     const bal = await getClientBalance(fx.control, "client-1");
     expect(bal.balance).to.equal(initial - payment - refund);

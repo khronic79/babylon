@@ -163,8 +163,11 @@ contract BaseTest is Test {
             validBefore,
             nonce
         );
+        // operationId выводится из nonce — уникален на каждый вызов.
+        bytes32 operationId = keccak256(abi.encodePacked(nonce));
         vm.prank(admin);
         control.topUpClientBalance(
+            operationId,
             userId,
             from,
             value,

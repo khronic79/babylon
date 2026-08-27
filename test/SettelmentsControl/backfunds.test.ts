@@ -8,6 +8,7 @@ import {
 import {
   SettelmentsControlAbi,
   getClientBalance,
+  randomBytes32,
   useFixture,
   type DeployFixture,
 } from "../helpers/fixture";
@@ -19,8 +20,13 @@ import {
   expectRevertCustomError,
 } from "../helpers/matchers";
 
-function backFunds(fx: DeployFixture, userId: string, amount: bigint) {
-  return fx.control.write.backFundsToClient([userId, amount], {
+function backFunds(
+  fx: DeployFixture,
+  userId: string,
+  amount: bigint,
+  operationId: `0x${string}` = randomBytes32(),
+) {
+  return fx.control.write.backFundsToClient([operationId, userId, amount], {
     account: fx.clients.admin.account.address,
   });
 }
@@ -81,7 +87,7 @@ describe("SettelmentsControl: backFundsToClient", () => {
   it("30: вызов не от admin → OnlyAdmin", async () => {
     const fx = await useFixture();
     await expectRevertCustomError(
-      fx.control.write.backFundsToClient(["client-1", 1n], {
+      fx.control.write.backFundsToClient([randomBytes32(), "client-1", 1n], {
         account: fx.clients.owner.account.address,
       }),
       ERRORS.OnlyAdmin,
@@ -137,5 +143,66 @@ describe("SettelmentsControl: backFundsToClient", () => {
     expect(await fx.control.read.getTotalClientBalance()).to.equal(
       balance - first,
     );
+  });
+
+  it("97: нулевой operationId → EmptyOperationId", async () => {
+    const fx = await useFixture();
+    const zeroId = `0x${"00".repeat(32)}`;
+    await expectRevertCustomError(
+      backFunds(fx, "client-1", 1n * 10n ** 18n, zeroId),
+      ERRORS.EmptyOperationId,
+    );
+  });
+
+  it("98: повторный operationId после успеха → OperationAlreadyProcessed", async () => {
+    const fx = await useFixture();
+    const balance = 1000n * 10n ** 18n;
+    const amount = 300n * 10n ** 18n;
+    const opId = randomBytes32();
+
+    await topUp(fx, "client-1", balance);
+
+    const hash = await backFunds(fx, "client-1", amount, opId);
+    const ev = await expectEvent(
+      fx.publicClient,
+      hash,
+      SettelmentsControlAbi,
+      "BackFundsToClient",
+    );
+    expect(ev.operationId).to.equal(opId);
+
+    await expectRevertCustomError(
+      backFunds(fx, "client-1", amount, opId),
+      ERRORS.OperationAlreadyProcessed,
+    );
+  });
+
+  it("99: revert (недостаток баланса) не сжигает ключ — retry с тем же operationId проходит", async () => {
+    const fx = await useFixture();
+    const amount = 100n * 10n ** 18n;
+    const opId = randomBytes32();
+
+    await expectRevertCustomError(
+      backFunds(fx, "client-1", amount, opId),
+      ERRORS.InsufficientClientBalanceForBackFunds,
+    );
+
+    await topUp(fx, "client-1", amount);
+    await backFunds(fx, "client-1", amount, opId);
+
+    const bal = await getClientBalance(fx.control, "client-1");
+    expect(bal.balance).to.equal(0n);
+  });
+
+  it("100: разные operationId не конфликтуют", async () => {
+    const fx = await useFixture();
+    const balance = 100n * 10n ** 18n;
+    await topUp(fx, "client-1", balance);
+
+    await backFunds(fx, "client-1", 20n * 10n ** 18n, randomBytes32());
+    await backFunds(fx, "client-1", 30n * 10n ** 18n, randomBytes32());
+
+    const bal = await getClientBalance(fx.control, "client-1");
+    expect(bal.balance).to.equal(50n * 10n ** 18n);
   });
 });

@@ -28,6 +28,7 @@ contract SettelmentsControlFuzz is BaseTest {
 
         vm.prank(admin);
         control.paymentClientToNative(
+            bytes32("pay-fee-math"),
             "alice",
             "native-1",
             amount,
@@ -79,6 +80,7 @@ contract SettelmentsControlFuzz is BaseTest {
 
         vm.prank(admin);
         control.paymentClientToNative(
+            bytes32("pay-multi"),
             "alice",
             "native-1",
             pay,
@@ -95,7 +97,7 @@ contract SettelmentsControlFuzz is BaseTest {
         if (back > 0) {
             uint256 userBefore = token.balanceOf(user1);
             vm.prank(admin);
-            control.backFundsToClient("alice", back);
+            control.backFundsToClient(bytes32("back-multi"), "alice", back);
             assertEq(token.balanceOf(user1), userBefore + back);
             assertEq(
                 control.getBalance("alice").balance,
@@ -120,6 +122,7 @@ contract SettelmentsControlFuzz is BaseTest {
         uint256 nativeBefore = token.balanceOf(native);
         vm.prank(admin);
         control.paymentClientToNative(
+            bytes32("pay-zero"),
             "alice",
             "native-1",
             amount,
@@ -143,6 +146,7 @@ contract SettelmentsControlFuzz is BaseTest {
         uint256 nativeBefore = token.balanceOf(native);
         vm.prank(admin);
         control.paymentClientToNative(
+            bytes32("pay-hundred"),
             "alice",
             "native-1",
             amount,

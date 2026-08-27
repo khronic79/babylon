@@ -58,6 +58,7 @@ contract SettelmentsControlHandler is BaseTest {
         amount = bound(amount, 1, 1e20);
         vm.prank(admin);
         control.paymentClientToNative(
+            _nextNonce(),
             userId,
             "native-1",
             amount,
@@ -72,7 +73,7 @@ contract SettelmentsControlHandler is BaseTest {
         string memory userId = isAlice ? "alice" : "bob";
         amount = bound(amount, 1, 1e20);
         vm.prank(admin);
-        control.backFundsToClient(userId, amount);
+        control.backFundsToClient(_nextNonce(), userId, amount);
     }
 }
 

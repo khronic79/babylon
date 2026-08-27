@@ -6,6 +6,7 @@ import {
   SettelmentsControlAbi,
   getClientBalance,
   getFeeConfig,
+  randomBytes32,
   useFixture,
 } from "../helpers/fixture";
 import { setNativeAddress, topUp } from "../helpers/actions";
@@ -23,6 +24,7 @@ describe("SettelmentsControl: роли и управление", () => {
     await expectRevertCustomError(
       fx.control.write.topUpClientBalance(
         [
+          randomBytes32(),
           "client-1",
           fx.clients.user1.account.address,
           1n,
@@ -43,7 +45,7 @@ describe("SettelmentsControl: роли и управление", () => {
     const fx = await useFixture();
     await expectRevertCustomError(
       fx.control.write.paymentClientToNative(
-        ["client-1", "native-1", 1n, "s", 1n, 1n],
+        [randomBytes32(), "client-1", "native-1", 1n, "s", 1n, 1n],
         { account: fx.clients.owner.account.address },
       ),
       ERRORS.OnlyAdmin,
@@ -53,7 +55,7 @@ describe("SettelmentsControl: роли и управление", () => {
   it("47: backFundsToClient от owner → OnlyAdmin", async () => {
     const fx = await useFixture();
     await expectRevertCustomError(
-      fx.control.write.backFundsToClient(["client-1", 1n], {
+      fx.control.write.backFundsToClient([randomBytes32(), "client-1", 1n], {
         account: fx.clients.owner.account.address,
       }),
       ERRORS.OnlyAdmin,

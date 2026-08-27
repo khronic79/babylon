@@ -14,6 +14,7 @@ export interface TopUpOpts {
   from?: `0x${string}`;
   signer?: DeployFixture["signers"]["user1"];
   nonce?: `0x${string}`;
+  operationId?: `0x${string}`;
   validAfter?: bigint;
   validBefore?: bigint;
 }
@@ -28,6 +29,7 @@ export async function topUp(
   const now = BigInt(await time.latest());
   const from = opts.from ?? fx.clients.user1.account.address;
   const nonce = opts.nonce ?? randomBytes32();
+  const operationId = opts.operationId ?? randomBytes32();
   const validAfter = opts.validAfter ?? now - 1n;
   const validBefore = opts.validBefore ?? now + 3600n;
   const signer = opts.signer ?? fx.signers.user1;
@@ -43,7 +45,7 @@ export async function topUp(
   });
 
   return fx.control.write.topUpClientBalance(
-    [userId, from, value, validAfter, validBefore, nonce, v, r, s],
+    [operationId, userId, from, value, validAfter, validBefore, nonce, v, r, s],
     { account: fx.clients.admin.account.address },
   );
 }

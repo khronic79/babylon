@@ -60,6 +60,7 @@ describe("SettelmentsControl: topUpClientBalance", () => {
     await expectRevertCustomError(
       fx.control.write.topUpClientBalance(
         [
+          randomBytes32(),
           "client-1",
           fx.clients.user1.account.address,
           value,
@@ -127,5 +128,75 @@ describe("SettelmentsControl: topUpClientBalance", () => {
     const contractBalance = await fx.token.read.balanceOf([fx.proxy.address]);
 
     expect(contractBalance).to.equal(total);
+  });
+
+  it("89: нулевой operationId → EmptyOperationId (баланс не меняется)", async () => {
+    const fx = await useFixture();
+    const value = 100n * 10n ** 18n;
+    const zeroId = `0x${"00".repeat(32)}`;
+
+    await expectRevertCustomError(
+      topUp(fx, "client-1", value, { operationId: zeroId }),
+      ERRORS.EmptyOperationId,
+    );
+
+    const bal = await getClientBalance(fx.control, "client-1");
+    expect(bal.balance).to.equal(0n);
+    expect(await fx.control.read.getTotalClientBalance()).to.equal(0n);
+  });
+
+  it("90: повторный operationId после успеха → OperationAlreadyProcessed", async () => {
+    const fx = await useFixture();
+    const value = 100n * 10n ** 18n;
+    const opId = randomBytes32();
+
+    const hash = await topUp(fx, "client-1", value, { operationId: opId });
+
+    const ev = await expectEvent(
+      fx.publicClient,
+      hash,
+      SettelmentsControlAbi,
+      "TopUpClientBalance",
+    );
+    expect(ev.operationId).to.equal(opId);
+
+    await expectRevertCustomError(
+      topUp(fx, "client-1", value, { operationId: opId }),
+      ERRORS.OperationAlreadyProcessed,
+    );
+  });
+
+  it("91: revert внешнего вызова не сжигает ключ — retry с тем же operationId проходит", async () => {
+    const fx = await useFixture();
+    const value = 100n * 10n ** 18n;
+    const opId = randomBytes32();
+    const now = BigInt(await time.latest());
+
+    await expectRevertCustomError(
+      topUp(fx, "client-1", value, {
+        operationId: opId,
+        validAfter: now - 2n,
+        validBefore: now - 1n,
+      }),
+      ERRORS.AuthorizationExpired,
+    );
+
+    // Тот же operationId, новый nonce → операция проходит, ключ сгорает.
+    await topUp(fx, "client-1", value, { operationId: opId });
+
+    const bal = await getClientBalance(fx.control, "client-1");
+    expect(bal.balance).to.equal(value);
+  });
+
+  it("92: разные operationId не конфликтуют", async () => {
+    const fx = await useFixture();
+    const a = 100n * 10n ** 18n;
+    const b = 250n * 10n ** 18n;
+
+    await topUp(fx, "client-1", a, { operationId: randomBytes32() });
+    await topUp(fx, "client-1", b, { operationId: randomBytes32() });
+
+    const bal = await getClientBalance(fx.control, "client-1");
+    expect(bal.balance).to.equal(a + b);
   });
 });

@@ -53,14 +53,23 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
     }
 
     event TopUpClientBalance(
+        bytes32 indexed operationId,
         string userId,
         uint256 amount,
         uint256 currentClientBalance,
         address sender
     );
-    event PaymentClientToNative(SettelmentContext ctx);
+    event PaymentClientToNative(
+        bytes32 indexed operationId,
+        SettelmentContext ctx
+    );
     event NativeAddressSet(string indexed nativeId, address nativeAddress);
-    event BackFundsToClient(string userId, address reciever, uint256 amount);
+    event BackFundsToClient(
+        bytes32 indexed operationId,
+        string userId,
+        address reciever,
+        uint256 amount
+    );
     event ChangeAdmin(address newAdmin);
     event MaxValiditySet(uint256 maxValidity);
     event FeeConfigSet(uint256 feePercentage, address feeCollector);
@@ -68,9 +77,18 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
 
     error OnlyAdmin();
     error OnlyOwner();
-    error InsufficientClientBalanceForSessionSettelment(SettelmentContext ctx);
-    error NativeAddressIsOutForSessionSettelment(SettelmentContext ctx);
-    error InsufficientContractBalanceForSessionSettelment(SettelmentContext ctx);
+    error InsufficientClientBalanceForSessionSettelment(
+        bytes32 operationId,
+        SettelmentContext ctx
+    );
+    error NativeAddressIsOutForSessionSettelment(
+        bytes32 operationId,
+        SettelmentContext ctx
+    );
+    error InsufficientContractBalanceForSessionSettelment(
+        bytes32 operationId,
+        SettelmentContext ctx
+    );
 
     error InsufficientClientBalanceForBackFunds(
         string clientId,
@@ -100,6 +118,8 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
     error ZeroAmount();
     error InsufficientStuckFunds();
     error WithdrawalFailed();
+    error OperationAlreadyProcessed(bytes32 operationId);
+    error EmptyOperationId();
 
     // keccak256(abi.encode(uint256(keccak256("SettelmentsControl.storage")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant STORAGE_LOCATION =
@@ -114,6 +134,7 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
         mapping(bytes32 => ClientBalance) clientBalances;
         mapping(bytes32 => address) nativeAddresses;
         mapping(bytes32 => bool) usedNonces;
+        mapping(bytes32 => bool) processedOperations;
         IERC20WithAuthorization token;
         address admin;
         address owner;
@@ -136,6 +157,11 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
         assembly {
             $.slot := STORAGE_LOCATION
         }
+    }
+
+    function _markProcessed(bytes32 operationId) internal {
+        ContractStorage storage $ = _getContractStorage();
+        $.processedOperations[operationId] = true;
     }
 
     modifier onlyAdmin() {
@@ -185,6 +211,7 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
     }
 
     function topUpClientBalance(
+        bytes32 operationId,
         string calldata userId,
         address from,
         uint256 value,
@@ -196,6 +223,11 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
         bytes32 s
     ) external onlyAdmin {
         ContractStorage storage $ = _getContractStorage();
+
+        if (operationId == bytes32(0)) revert EmptyOperationId();
+        if ($.processedOperations[operationId]) {
+            revert OperationAlreadyProcessed(operationId);
+        }
 
         ClientBalance storage clientBalance = $.clientBalances[
             keccak256(abi.encodePacked(userId))
@@ -213,11 +245,30 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
             s
         );
 
+        _applyTopUp(operationId, userId, from, value, clientBalance);
+    }
+
+    // Balance update + emit are extracted into a separate function to reduce
+    // EVM stack depth: after adding operationId, topUpClientBalance has 10
+    // parameters, and inlining the balance update + emit together with the
+    // receiveWithAuthorization call triggers "Stack too deep" (compiled without
+    // viaIR, audit finding C-01). Do not inline back.
+    function _applyTopUp(
+        bytes32 operationId,
+        string calldata userId,
+        address from,
+        uint256 value,
+        ClientBalance storage clientBalance
+    ) internal {
+        ContractStorage storage $ = _getContractStorage();
         clientBalance.balance += value;
         $.totalClientBalance += value;
         clientBalance.lastInboundAddress = from;
 
+        _markProcessed(operationId);
+
         emit TopUpClientBalance(
+            operationId,
             userId,
             value,
             clientBalance.balance,
@@ -259,6 +310,7 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
     }
 
     function paymentClientToNative(
+        bytes32 operationId,
         string calldata clientId,
         string calldata nativeId,
         uint256 amount,
@@ -266,6 +318,11 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
         uint256 timestamp,
         uint256 minutesQty
     ) external onlyAdmin {
+        if (operationId == bytes32(0)) revert EmptyOperationId();
+        if (_getContractStorage().processedOperations[operationId]) {
+            revert OperationAlreadyProcessed(operationId);
+        }
+
         if (amount == 0) revert ZeroAmount();
 
         bytes32 clientHash = keccak256(abi.encodePacked(clientId));
@@ -280,11 +337,14 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
         );
 
         if (ctx.nativeAddress == address(0)) {
-            revert NativeAddressIsOutForSessionSettelment(ctx);
+            revert NativeAddressIsOutForSessionSettelment(operationId, ctx);
         }
 
         if (ctx.clientBalance < amount) {
-            revert InsufficientClientBalanceForSessionSettelment(ctx);
+            revert InsufficientClientBalanceForSessionSettelment(
+                operationId,
+                ctx
+            );
         }
 
         IERC20WithAuthorization token = _getContractStorage().token;
@@ -292,7 +352,10 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
         uint256 contractBalance = token.balanceOf(address(this));
 
         if (contractBalance < amount) {
-            revert InsufficientContractBalanceForSessionSettelment(ctx);
+            revert InsufficientContractBalanceForSessionSettelment(
+                operationId,
+                ctx
+            );
         }
 
         if (ctx.amountToNative > 0) {
@@ -306,13 +369,21 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
         _getContractStorage().clientBalances[clientHash].balance -= amount;
         _getContractStorage().totalClientBalance -= amount;
 
-        emit PaymentClientToNative(ctx);
+        _markProcessed(operationId);
+
+        emit PaymentClientToNative(operationId, ctx);
     }
 
     function backFundsToClient(
+        bytes32 operationId,
         string calldata userId,
         uint256 amount
     ) external onlyAdmin {
+        if (operationId == bytes32(0)) revert EmptyOperationId();
+        if (_getContractStorage().processedOperations[operationId]) {
+            revert OperationAlreadyProcessed(operationId);
+        }
+
         if (amount == 0) revert ZeroAmount();
         ContractStorage storage $ = _getContractStorage();
         ClientBalance storage balance = $.clientBalances[
@@ -347,7 +418,9 @@ contract SettelmentsControl is Initializable, EIP712Upgradeable {
         balance.balance = currentBalance - amount;
         $.totalClientBalance -= amount;
 
-        emit BackFundsToClient(userId, lastAddress, amount);
+        _markProcessed(operationId);
+
+        emit BackFundsToClient(operationId, userId, lastAddress, amount);
     }
 
     function getBalance(

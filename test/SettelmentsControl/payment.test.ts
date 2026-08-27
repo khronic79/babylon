@@ -9,6 +9,7 @@ import {
 import {
   SettelmentsControlAbi,
   getClientBalance,
+  randomBytes32,
   useFixture,
   type DeployFixture,
 } from "../helpers/fixture";
@@ -23,13 +24,18 @@ import {
 async function pay(
   fx: DeployFixture,
   amount: bigint,
-  overrides: { clientId?: string; nativeId?: string } = {},
+  overrides: {
+    clientId?: string;
+    nativeId?: string;
+    operationId?: `0x${string}`;
+  } = {},
 ) {
   const clientId = overrides.clientId ?? "client-1";
   const nativeId = overrides.nativeId ?? "native-1";
+  const operationId = overrides.operationId ?? randomBytes32();
   const timestamp = BigInt(await time.latest());
   return fx.control.write.paymentClientToNative(
-    [clientId, nativeId, amount, "session-1", timestamp, 30n],
+    [operationId, clientId, nativeId, amount, "session-1", timestamp, 30n],
     { account: fx.clients.admin.account.address },
   );
 }
@@ -99,7 +105,7 @@ describe("SettelmentsControl: paymentClientToNative", () => {
     const timestamp = BigInt(await time.latest());
     await expectRevertCustomError(
       fx.control.write.paymentClientToNative(
-        ["client-1", "native-1", 1n, "s", timestamp, 1n],
+        [randomBytes32(), "client-1", "native-1", 1n, "s", timestamp, 1n],
         { account: fx.clients.owner.account.address },
       ),
       ERRORS.OnlyAdmin,
@@ -239,5 +245,70 @@ describe("SettelmentsControl: paymentClientToNative", () => {
     expect(await balanceOf(fx, fx.clients.native.account.address)).to.equal(
       nativeBefore + amount,
     );
+  });
+
+  it("93: нулевой operationId → EmptyOperationId", async () => {
+    const fx = await useFixture();
+    const zeroId = `0x${"00".repeat(32)}`;
+    await expectRevertCustomError(
+      pay(fx, 1n * 10n ** 18n, { operationId: zeroId }),
+      ERRORS.EmptyOperationId,
+    );
+  });
+
+  it("94: повторный operationId после успеха → OperationAlreadyProcessed", async () => {
+    const fx = await useFixture();
+    const balance = 1000n * 10n ** 18n;
+    const amount = 300n * 10n ** 18n;
+    const opId = randomBytes32();
+
+    await topUp(fx, "client-1", balance);
+    await setNativeAddress(fx, "native-1");
+
+    const hash = await pay(fx, amount, { operationId: opId });
+    const ev = await expectEvent(
+      fx.publicClient,
+      hash,
+      SettelmentsControlAbi,
+      "PaymentClientToNative",
+    );
+    expect(ev.operationId).to.equal(opId);
+
+    await expectRevertCustomError(
+      pay(fx, amount, { operationId: opId }),
+      ERRORS.OperationAlreadyProcessed,
+    );
+  });
+
+  it("95: revert (недостаток баланса) не сжигает ключ — retry с тем же operationId проходит", async () => {
+    const fx = await useFixture();
+    const amount = 100n * 10n ** 18n;
+    const opId = randomBytes32();
+
+    await setNativeAddress(fx, "native-1");
+    await expectRevertCustomError(
+      pay(fx, amount, { operationId: opId }),
+      ERRORS.InsufficientClientBalanceForSessionSettelment,
+    );
+
+    // Пополняем и повторяем с тем же operationId.
+    await topUp(fx, "client-1", amount);
+    await pay(fx, amount, { operationId: opId });
+
+    const bal = await getClientBalance(fx.control, "client-1");
+    expect(bal.balance).to.equal(0n);
+  });
+
+  it("96: разные operationId не конфликтуют", async () => {
+    const fx = await useFixture();
+    const balance = 1000n * 10n ** 18n;
+    await topUp(fx, "client-1", balance);
+    await setNativeAddress(fx, "native-1");
+
+    await pay(fx, 100n * 10n ** 18n, { operationId: randomBytes32() });
+    await pay(fx, 200n * 10n ** 18n, { operationId: randomBytes32() });
+
+    const bal = await getClientBalance(fx.control, "client-1");
+    expect(bal.balance).to.equal(balance - 300n * 10n ** 18n);
   });
 });

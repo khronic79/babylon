@@ -107,6 +107,18 @@
 | 86 | Мок-токен | `validBefore` в прошлом | revert `AuthorizationExpired` | viem |
 | 87 | Мок-токен | повторный nonce | revert `AuthorizationAlreadyUsed` | viem |
 | 88 | Мок-токен | неверная подпись | revert `InvalidAuthorizationSignature` | viem |
+| 89 | Идемпотентность (topUp) | нулевой `operationId` (`bytes32(0)`) | revert `EmptyOperationId`; баланс не меняется | viem |
+| 90 | Идемпотентность (topUp) | повторный `operationId` после успеха | revert `OperationAlreadyProcessed`; событие содержит `indexed operationId` | viem |
+| 91 | Идемпотентность (topUp) | revert внешнего вызова (просроченная authorization) → retry с тем же `operationId` | ключ не сжигается, retry проходит | viem |
+| 92 | Идемпотентность (topUp) | разные `operationId` | не конфликтуют, баланс накапливается | viem |
+| 93 | Идемпотентность (payment) | нулевой `operationId` | revert `EmptyOperationId` | viem |
+| 94 | Идемпотентность (payment) | повторный `operationId` после успеха | revert `OperationAlreadyProcessed`; событие содержит `indexed operationId` | viem |
+| 95 | Идемпотентность (payment) | revert (недостаток баланса) → retry с тем же `operationId` | ключ не сжигается, retry проходит | viem |
+| 96 | Идемпотентность (payment) | разные `operationId` | не конфликтуют | viem |
+| 97 | Идемпотентность (backFunds) | нулевой `operationId` | revert `EmptyOperationId` | viem |
+| 98 | Идемпотентность (backFunds) | повторный `operationId` после успеха | revert `OperationAlreadyProcessed`; событие содержит `indexed operationId` | viem |
+| 99 | Идемпотентность (backFunds) | revert (недостаток баланса) → retry с тем же `operationId` | ключ не сжигается, retry проходит | viem |
+| 100 | Идемпотентность (backFunds) | разные `operationId` | не конфликтуют | viem |
 
 ## Foundry-дополнение (forge)
 
